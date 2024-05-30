@@ -4,10 +4,10 @@ import (
 	ldap "github.com/go-ldap/ldap/v3"
 )
 
-//Authenticate checks if the given credentials are valid, or returns an error if one occurred.
-//username may be either the sAMAccountName or the userPrincipalName.
+// Authenticate checks if the given credentials are valid, or returns an error if one occurred.
+// username may be either the sAMAccountName or the userPrincipalName.
 func Authenticate(config *Config, username, password string) (bool, error) {
-	upn, err := config.UPN(username)
+	user, _, err := config.ExtractUserName(username)
 	if err != nil {
 		return false, err
 	}
@@ -18,16 +18,17 @@ func Authenticate(config *Config, username, password string) (bool, error) {
 	}
 	defer conn.Conn.Close()
 
-	return conn.Bind(upn, password)
+	return conn.Bind(user, password)
 }
 
-//AuthenticateExtended checks if the given credentials are valid, or returns an error if one occurred.
-//username may be either the sAMAccountName or the userPrincipalName.
-//entry is the *ldap.Entry that holds the DN and any request attributes of the user.
-//If groups is non-empty, userGroups will hold which of those groups the user is a member of.
-//groups can be a list of groups referenced by DN or cn and the format provided will be the format returned.
+// AuthenticateExtended checks if the given credentials are valid, or returns an error if one occurred.
+// username may be either the sAMAccountName or the userPrincipalName.
+// entry is the *ldap.Entry that holds the DN and any request attributes of the user.
+// If groups is non-empty, userGroups will hold which of those groups the user is a member of.
+// groups can be a list of groups referenced by DN or cn and the format provided will be the format returned.
 func AuthenticateExtended(config *Config, username, password string, attrs, groups []string) (status bool, entry *ldap.Entry, userGroups []string, err error) {
-	upn, err := config.UPN(username)
+
+	fullUserName, user, err := config.ExtractUserName(username)
 	if err != nil {
 		return false, nil, nil, err
 	}
@@ -39,7 +40,7 @@ func AuthenticateExtended(config *Config, username, password string, attrs, grou
 	defer conn.Conn.Close()
 
 	//bind
-	status, err = conn.Bind(upn, password)
+	status, err = conn.Bind(fullUserName, password)
 	if err != nil {
 		return false, nil, nil, err
 	}
@@ -48,7 +49,11 @@ func AuthenticateExtended(config *Config, username, password string, attrs, grou
 	}
 
 	//get entry
-	entry, err = conn.GetAttributes("userPrincipalName", upn, attrs)
+	attr := "userPrincipalName"
+	if config.ForceSearchForSamAccountName {
+		attr = "sAMAccountName"
+	}
+	entry, err = conn.GetAttributes(attr, user, attrs)
 	if err != nil {
 		return false, nil, nil, err
 	}
